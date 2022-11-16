@@ -1,0 +1,28 @@
+set dotenv-load
+
+# print help message
+default:
+	@just -l
+
+# create Google service account
+create-gsa-account:
+    gcloud iam service-accounts create ${GSA_NAME} --project=${GSA_PROJECT}
+
+# setup proper iam binding to deploy to GKE in {{project}}
+grant-gsa-gke-develop-role project:
+    # grant the google service account permission to modify kubernetes resource in project
+    gcloud projects add-iam-policy-binding {{project}} \
+      --member=serviceAccount:${GSA_NAME}@${GSA_PROJECT}.iam.gserviceaccount.com \
+      --role=roles/container.developer
+    # grant the argocd kubernetes service account to act as google service account
+    gcloud iam service-accounts add-iam-policy-binding ${GSA_NAME}@${GSA_PROJECT}.iam.gserviceaccount.com \
+      --role roles/iam.workloadIdentityUser \
+      --member "serviceAccount:${GKE_PROJECT}.svc.id.goog[${NAMESPACE}/argocd-application-controller]"
+    gcloud iam service-accounts add-iam-policy-binding ${GSA_NAME}@${GSA_PROJECT}.iam.gserviceaccount.com \
+      --role roles/iam.workloadIdentityUser \
+      --member "serviceAccount:${GKE_PROJECT}.svc.id.goog[${NAMESPACE}/argocd-server]"
+    # annotate the Kubernetes service account with the email address of the IAM service account
+    kubectl annotate serviceaccount argocd-application-controller --namespace argocd \
+      iam.gke.io/gcp-service-account=${GSA_NAME}@${GSA_PROJECT}.iam.gserviceaccount.com
+    kubectl annotate serviceaccount argocd-server --namespace argocd \
+      iam.gke.io/gcp-service-account=${GSA_NAME}@${GSA_PROJECT}.iam.gserviceaccount.com
